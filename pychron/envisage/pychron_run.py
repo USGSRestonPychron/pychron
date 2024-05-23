@@ -32,6 +32,7 @@ from pychron.pychron_constants import LASER_PLUGINS
 logger = logging.getLogger()
 
 PACKAGE_DICT = dict(
+    UsagePlugin="pychron.usage.tasks.plugin",
     ArArConstantsPlugin="pychron.constants.tasks.arar_constants_plugin",
     DashboardServerPlugin="pychron.dashboard.tasks.server.plugin",
     DashboardClientPlugin="pychron.dashboard.tasks.client.plugin",
@@ -71,6 +72,7 @@ PACKAGE_DICT = dict(
     LDEOFurnaceControlPlugin="pychron.furnace.tasks.ldeo.furnace_control_plugin",
     ThermoFurnacePlugin="pychron.furnace.tasks.thermo.furnace_plugin",
     # hardware-lasers
+    TAPDiodePlugin="pychron.lasers.tasks.plugins.tap",
     OsTechDiodePlugin="pychron.lasers.tasks.plugins.ostech_diode",
     AblationCO2Plugin="pychron.lasers.tasks.plugins.ablation_co2",
     ChromiumCO2Plugin="pychron.lasers.tasks.plugins.chromium_co2",
@@ -99,7 +101,7 @@ PACKAGE_DICT = dict(
     # social
     EmailPlugin="pychron.social.email.tasks.plugin",
     GoogleCalendarPlugin="pychron.social.google_calendar.tasks.plugin",
-    TwitterPlugin="pychron.social.twitter.plugin"
+    TwitterPlugin="pychron.social.twitter.plugin",
     # WorkspacePlugin='pychron.workspace.tasks.workspace_plugin',
     # LabBookPlugin='pychron.labbook.tasks.labbook_plugin',
     # SystemMonitorPlugin='pychron.system_monitor.tasks.system_monitor_plugin',
@@ -216,10 +218,26 @@ def get_user_plugins():
             plugins.append(plugin)
 
     plugins = list(sorted(plugins, key=attrgetter("name")))
-    idx = next((p for p in plugins if p.name == "UpdatePlugin"), None)
-    if idx is not None:
-        p = plugins.pop(idx)
-        plugins.insert(0, p)
+
+    dvcplugin = next((p for p in plugins if p.name == "DVCPlugin"), None)
+    if dvcplugin is not None:
+        # ensure a githost plugin is available
+        githost = next(
+            (p for p in plugins if p.name in ("GitHubPlugin", "LocalGitPlugin")), None
+        )
+        if githost is None:
+            plugins.append(get_plugin("LocalGitPlugin"))
+
+        # make githost plugin run prior to dvc plugin
+        plugins.remove(githost)
+        plugins.insert(0, githost)
+
+    updateplugin = next((p for p in plugins if p.name == "UpdatePlugin"), None)
+    if updateplugin is not None:
+        plugins.remove(updateplugin)
+        plugins.insert(0, updateplugin)
+        # p = plugins.pop(idx)
+        # plugins.insert(0, p)
 
     return plugins
 
@@ -267,6 +285,13 @@ def launch(klass):
     app = app_factory(klass)
 
     try:
+        try:
+            import qdarktheme
+
+            qdarktheme.setup_theme("light")
+        except ImportError:
+            pass
+
         # root = os.path.dirname(__file__)
         # r = QtGui.QApplication.instance()
         # p = os.path.join(root, 'stylesheets', 'qdark.css')

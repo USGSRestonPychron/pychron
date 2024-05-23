@@ -123,6 +123,7 @@ from pychron.pipeline.pipeline_defaults import (
     RECENT_RUNS,
     CSV_INVERSE_ISOCHRON,
     CSV_REGRESSION,
+    REVERT_HISTORY,
 )
 from pychron.pipeline.plot.editors.figure_editor import FigureEditor
 from pychron.pipeline.plot.editors.ideogram_editor import IdeogramEditor
@@ -379,6 +380,25 @@ class PipelineEngine(Loggable):
         if info.result:
             agv.save(ans, self.dvc)
 
+    def unknowns_set_fixed_plateau(self):
+        items = self.selected_unknowns
+        if not items:
+            items = self.selected.unknowns
+
+        if len(items) > 1:
+            s, e = items[0], items[-1]
+            gs = self.selected.editor.get_analysis_groups()
+            for gi in gs:
+                if s in gi.analyses:
+                    gi.calculate_fixed_plateau = True
+                    gi.fixed_step_low = s.step
+                    gi.fixed_step_high = e.step
+
+                    self.selected.editor.figure_model.force_refresh_panels = False
+                    self.selected.editor.refresh_needed = True
+                    self.selected.editor.figure_model.force_refresh_panels = True
+                    break
+
     def unknowns_clear_all_grouping(self):
         self._set_grouping(self.selected.unknowns, 0)
 
@@ -538,6 +558,7 @@ class PipelineEngine(Loggable):
         unks = self.selected.unknowns
         self.selected.unknowns = [unk for unk in unks if unk.tag.lower() != "invalid"]
         self.refresh_table_needed = True
+        self.state.unknowns = self.selected.unknowns
 
     # ============================================================================================================
     # nodes
@@ -1034,7 +1055,14 @@ class PipelineEngine(Loggable):
                     ("Audit", AUDIT),
                 ),
             ),
-            ("Edit", (("Bulk Edit", BULK_EDIT), ("RunID Edit", RUNID_EDIT))),
+            (
+                "Edit",
+                (
+                    ("Bulk Edit", BULK_EDIT),
+                    ("RunID Edit", RUNID_EDIT),
+                    ("Revert History", REVERT_HISTORY),
+                ),
+            ),
             ("Plot", plots),
             ("Table", tables),
             (

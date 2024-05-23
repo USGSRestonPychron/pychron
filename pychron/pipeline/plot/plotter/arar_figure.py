@@ -79,6 +79,7 @@ class SelectionFigure(HasTraits):
 
 
 class BaseArArFigure(SelectionFigure):
+    use_fixed_height = False
     analyses = Any
     sorted_analyses = Property(depends_on="analyses")
 
@@ -130,6 +131,8 @@ class BaseArArFigure(SelectionFigure):
         if len(plots) > 1 and not self.equi_stack:
             vertical_resize = not all([p.height for p in plots[:-1]])
             graph.vertical_resize = vertical_resize
+        else:
+            graph.vertical_resize = not plots[0].height
 
         graph.clear_has_title()
 
@@ -142,7 +145,8 @@ class BaseArArFigure(SelectionFigure):
         layout = self.options.layout
         fw = layout.fixed_width
         fh = layout.fixed_height
-        stretch_vertical = layout.stretch_vertical
+
+        # stretch_vertical = layout.stretch_vertical
 
         if fw and col[1] > 0:
             fw = int(fw / col[1])
@@ -157,21 +161,22 @@ class BaseArArFigure(SelectionFigure):
             if fw:
                 r = ""
                 if fh:
-                    if i == 0 and not po.height:
+                    if i == 0 and not po.height or self.use_fixed_height:
                         height = fh - oheights
                     else:
                         height = po.height
+
+                    if self.use_fixed_height:
+                        height = fh - oheights
                 else:
                     height = po.height
-                    if stretch_vertical:
-                        if i == 0:
-                            r = "v"
-
+                    # if i == 0 and stretch_vertical:
+                    #     r = 'v'
                 kw["bounds"] = [fw, height]
                 kw["resizable"] = r
             elif fh:
                 kw["resizable"] = "h"
-                if i == 0 and not po.height:
+                if i == 0 and not po.height or self.use_fixed_height:
                     height = fh - oheights
                 else:
                     height = po.height
@@ -180,6 +185,8 @@ class BaseArArFigure(SelectionFigure):
             elif po.height:
                 kw["bounds"] = [50, po.height]
                 kw["resizable"] = "h"
+            else:
+                kw["resizable"] = "hv"
 
             # if self.options.layout.fixed_width:
             #     kw['bounds'] = [self.options.layout.fixed_width, kw['bounds'][1]]
@@ -199,6 +206,7 @@ class BaseArArFigure(SelectionFigure):
 
             kw["padding"] = self.options.get_paddings()
 
+            print(kw, plot_dict)
             p = graph.new_plot(**kw)
             if i == (len(plots) - 1):
                 p.title_font = self.options.title_font

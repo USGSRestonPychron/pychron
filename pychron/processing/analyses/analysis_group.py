@@ -448,6 +448,10 @@ class AnalysisGroup(IdeogramPlotable):
         return self.identifier
 
     @property
+    def identifier_str(self):
+        return ",".join({ai.identifier for ai in self.analyses})
+
+    @property
     def age_attr(self):
         return "uage_w_position_err" if self.include_j_position_error else "uage"
 
@@ -794,6 +798,7 @@ class StepHeatAnalysisGroup(AnalysisGroup):
     nsteps = Int
     fixed_step_low = StepStr
     fixed_step_high = StepStr
+    calculate_fixed_plateau = Bool(False)
     plateau_age_error_kind = Str
 
     plateau_nsteps = Int(3)
@@ -890,6 +895,18 @@ class StepHeatAnalysisGroup(AnalysisGroup):
 
         return plateau_step
 
+    def valid_fixed_steps(self):
+        steps = [a.step for a in self.analyses if not self._is_omitted(a)]
+        if self.fixed_steps:
+            ps, pe = self.fixed_steps
+            if ps:
+                if ps not in steps:
+                    return False
+            if pe:
+                if pe not in steps:
+                    return False
+            return self.fixed_steps
+
     @cached_property
     def _get_integrated_age(self):
         if self.integrated_include_omitted:
@@ -935,10 +952,13 @@ class StepHeatAnalysisGroup(AnalysisGroup):
                 }
 
                 excludes = [i for i, ai in enumerate(ans) if self._is_omitted(ai)]
+                steps = [a.step for a in ans if not self._is_omitted(a)]
+
                 args = calculate_plateau_age(
                     ages,
                     errors,
                     k39,
+                    steps,
                     method=self.plateau_method,
                     options=options,
                     excludes=excludes,

@@ -25,6 +25,8 @@ from traitsui.menu import Action
 
 from pychron.envisage.resources import icon
 from pychron.envisage.ui_actions import UIAction, UITaskAction
+from pychron.pipeline.data_reduction_logbook import DataReductionLogbook
+from pychron.pychron_constants import DVC_PROTOCOL
 
 
 class EditorAction(TaskAction):
@@ -51,6 +53,17 @@ class SignalEstimatorAction(Action):
 
         s = SignalEstimator()
         s.j_per_hour = float(v)
+        s.edit_traits()
+
+
+class IsochronSandboxAction(UIAction):
+    name = "Isochron Sandbox"
+
+    def perform(self, event):
+        from pychron.pipeline.isochron_sandbox import IsochronSandbox
+
+        s = IsochronSandbox()
+        s.init()
         s.edit_traits()
 
 
@@ -343,6 +356,17 @@ class MassSpecReducedAction(PipelineAction):
 class ImportOptionsActions(PipelineAction):
     name = "Import Options..."
     action = "import_options"
+
+
+class DataReductionLogAction(UIAction):
+    name = "Data Reduction Log"
+
+    def perform(self, event):
+        app = event.task.window.application
+        dvc = app.get_service(DVC_PROTOCOL)
+        d = DataReductionLogbook(dvc=dvc)
+        d.populate()
+        d.edit_traits()
 
 
 # ============= Quick Series ====================================

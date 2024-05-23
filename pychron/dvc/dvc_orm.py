@@ -346,6 +346,10 @@ class ProjectTbl(Base, NameMixin):
             else self.name
         )
 
+    @property
+    def unique_id(self):
+        return self.id
+
 
 class MaterialTbl(Base, NameMixin):
     samples = relationship("SampleTbl", backref="material")
@@ -431,7 +435,7 @@ class IrradiationPositionTbl(Base, IDMixin):
     j_err = Column(Float)
     packet = stringcolumn(40)
 
-    # analyses = relationship('AnalysisTbl', backref='irradiation_position')
+    analyses = relationship("AnalysisTbl")
 
     @property
     def analysis_count(self):

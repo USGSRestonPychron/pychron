@@ -202,8 +202,9 @@ class Spectrum(BaseArArFigure):
                 grp.calculate_fixed_plateau_start,
                 grp.calculate_fixed_plateau_end,
             )
-        else:
-            ag.fixed_step_low, ag.fixed_step_high = ("", "")
+
+        # if not ag.calculate_fixed_plateau:
+        #     ag.fixed_step_low, ag.fixed_step_high = ("", "")
 
         ag.dirty = True
 
@@ -277,7 +278,7 @@ class Spectrum(BaseArArFigure):
             vjustify="bottom",
             font=font,
             relative_position=relative_position,
-            **kw
+            **kw,
         )
         self.age_label = o
         plot.overlays.append(o)
@@ -519,10 +520,16 @@ class Spectrum(BaseArArFigure):
         sample = ag.sample
         identifier = ag.identifier
         fixed = ""
-        fixed_steps = ag.fixed_steps
+        fixed_steps = ag.valid_fixed_steps()
         if fixed_steps:
             if fixed_steps[0] or fixed_steps[1]:
-                fixed = "Fixed ({}-{})".format(*fixed_steps)
+                a, b = fixed_steps
+                if a:
+                    a = f"{a.upper()}"
+                if b:
+                    b = f"{b.upper()}"
+
+                fixed = "Fixed ({}-{})".format(a, b)
 
         text = "{}Plateau = {}".format(fixed, text)
 

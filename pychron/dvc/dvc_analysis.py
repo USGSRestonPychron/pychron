@@ -589,16 +589,22 @@ class DVCAnalysis(Analysis):
             if reference_data:
                 rd = reference_data[dk]
 
-            jd[dk] = {
-                "value": float(v),
-                "error": float(e),
-                "reviewed": reviewed,
-                "fit": fi,
-                "reference_detector": ticf["reference_detector"],
-                "standard_ratio": standard_ratio,
-                "references": make_ref_list(refs),
-                "reference_data": rd,
-            }
+            jd[dk] = {}
+            jd[dk].update(**ticf)
+
+            jd[dk].update(
+                **{
+                    "value": float(v),
+                    "error": float(e),
+                    "reviewed": reviewed,
+                    "fit": fi,
+                    # "reference_detector": ticf["reference_detector"],
+                    "standard_ratio": standard_ratio,
+                    "references": make_ref_list(refs),
+                    "reference_data": rd,
+                }
+            )
+
         self._dump(jd, path)
 
     def dump_source_correction_icfactors(self, refs=None, standard_ratio=None):
@@ -720,6 +726,9 @@ class DVCAnalysis(Analysis):
                 if iso.detector == det:
                     self._load_value_error(iso.baseline, v)
 
+                    if "modifier_error" in v:
+                        iso.baseline.error = v["modifier_error"]
+
                     iso.baseline.set_fit(v["fit"], notify=False)
                     fod = v.get("filter_outliers_dict")
                     if fod:
@@ -787,11 +796,12 @@ class DVCAnalysis(Analysis):
             repository_identifier = self.repository_identifier
         ret = analysis_path((self.uuid, self.record_id), repository_identifier, **kw)
         if ret is None:
-            self.warning(
-                "Failed locating analysis path for uuid={}, record_id={} in {} {}".format(
-                    self.uuid, self.record_id, repository_identifier, kw
+            if kw.get("modifier") in ("intercepts", "baselines", "blanks", "icfactors"):
+                self.warning(
+                    "Failed locating analysis path for uuid={}, record_id={} in {} {}".format(
+                        self.uuid, self.record_id, repository_identifier, kw
+                    )
                 )
-            )
         return ret
 
     @property

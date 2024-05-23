@@ -153,6 +153,21 @@ class DVC(Loggable):
         if self.db.connect():
             return True
 
+    def get_data_reduction_loads(self):
+        return self.meta_repo.get_data_reduction_loads()
+
+    def save_data_reduction_manifest(self, manifest):
+        self.meta_repo.save_data_reduction_manifest(manifest)
+
+    def save_data_reduction_loads(self, objs):
+        self.meta_repo.save_data_reduction_loads(objs)
+
+    def backup_data_reduction_loads(self):
+        self.meta_repo.backup_data_reduction_loads()
+
+    def share_data_reduction_loads(self):
+        self.meta_repo.share_data_reduction_loads()
+
     def fix_identifier(
         self,
         src_uuid,
@@ -704,6 +719,30 @@ class DVC(Loggable):
         progress_loader(ai_gen(), func, threshold=1)
         self._commit_freeze(added, "<PR_FREEZE>")
 
+    def rollback_to_collection(self, analyses, reponame):
+        repo = self.get_repository(reponame)
+        for analysis in analyses:
+            repo_id = analysis.repository_identifier
+            for mod, g in (
+                ("intercepts", "<ISOEVO> default collection fits"),
+                ("icfactors", "<ICFactor> default"),
+                ("baselines", "<ISOEVO> default collection fits"),
+                ("blanks", "<BLANKS> preceding"),
+            ):
+                sp = analysis_path(analysis, repo_id, modifier=mod)
+                cs = repo.get_commits_from_log(greps=(g,), path=sp)
+                print(sp, cs)
+                if sp and cs:
+                    repo.checkout(cs[-1].hexsha, "--", sp)
+
+    def edit_comment(self, runid, repository_identifier, comment):
+        self.debug(f"edit comment {runid} {repository_identifier} {comment}")
+        path = analysis_path(runid, repository_identifier)
+        obj = dvc_load(path)
+        obj["comment"] = comment
+        dvc_dump(obj, path)
+        return path
+
     def manual_edit(self, runid, repository_identifier, values, errors, modifier):
         self.debug(
             "manual edit {} {} {}".format(runid, repository_identifier, modifier)
@@ -1090,6 +1129,7 @@ class DVC(Loggable):
         use_cached=True,
         sync_repo=True,
         use_flux_histories=True,
+        warn=True,
     ):
         if not records:
             return []
@@ -1125,12 +1165,13 @@ class DVC(Loggable):
 
         bad_records = [r for r in records if r.repository_identifier is None]
         if bad_records:
-            self.warning_dialog(
-                "Missing Repository Associations. Contact an expert!"
-                'Cannot load analyses "{}"'.format(
-                    ",".join([r.record_id for r in bad_records])
+            if warn:
+                self.warning_dialog(
+                    "Missing Repository Associations. Contact an expert!"
+                    'Cannot load analyses "{}"'.format(
+                        ",".join([r.record_id for r in bad_records])
+                    )
                 )
-            )
             records = [r for r in records if r.repository_identifier is not None]
 
         if not records:
@@ -1241,7 +1282,8 @@ class DVC(Loggable):
                     sample_prep=sample_prep,
                     quick=quick,
                     reload=reload,
-                    *args
+                    warn=warn,
+                    *args,
                 )
             except BaseException:
                 record = args[0]
@@ -1269,7 +1311,7 @@ class DVC(Loggable):
 
         nn = len(records)
         if len(records) != n:
-            if not self.confirmation_dialog(
+            if warn and not self.confirmation_dialog(
                 "Failed making {} of {} analyses. "
                 "Are you sure you want to continue?".format(nn - n, nn)
             ):
@@ -1425,8 +1467,7 @@ class DVC(Loggable):
             repo = self._get_repository(name)
             repo.pull(use_progress=use_progress, use_auto_pull=self.use_auto_pull)
 
-            # rebase any new commits on the data_collection branch to this branch
-            repo.merge("origin/data_collection", inform=False)
+            self._merge_data_collection(repo)
 
             return True
         else:
@@ -1439,28 +1480,58 @@ class DVC(Loggable):
             if not service:
                 return True
             else:
-                if service.clone_from(name, root, self.organization):
-                    repo = self._get_repository(name)
-                    repo.merge("origin/data_collection", inform=False)
+                if isinstance(service, LocalGitHostService):
+                    service.create_empty_repo(name)
+
                     return True
+                elif service.clone_from(name, root, self.organization):
+                    repo = self._get_repository(name)
+                    self._merge_data_collection(repo)
+                    # repo.merge("origin/data_collection", inform=False)
+
+                    return True
+                else:
+                    self.warning_dialog(
+                        "name={} not in available repos "
+                        "from service={}, organization={}".format(
+                            name, service.remote_url, self.organization
+                        )
+                    )
+                    names = self.remote_repository_names()
+                    for ni in names:
+                        self.debug("available repo== {}".format(ni))
+
                 # names = self.remote_repository_names()
                 # if name in names:
                 #     service.clone_from(name, root, self.organization)
                 #     return True
-                else:
-                    if isinstance(service, LocalGitHostService):
-                        service.create_empty_repo(name)
-                        return True
-                    else:
-                        self.warning_dialog(
-                            "name={} not in available repos "
-                            "from service={}, organization={}".format(
-                                name, service.remote_url, self.organization
-                            )
-                        )
-                        names = self.remote_repository_names()
-                        for ni in names:
-                            self.debug("available repo== {}".format(ni))
+
+    def _merge_data_collection(self, repo):
+        # merge any new commits on the data_collection branch to this branch
+        # get all branches like data_collection
+        # branches = repo.active_repo.git.branch('-a').split('\n')
+        # branches = [b.strip() for b in branches]
+        # branches = [b for b in branches if 'data_collection' in b]
+        branches = ["origin/data_collection"]
+        for b in branches:
+            if b.startswith("remotes"):
+                b = b.replace("remotes/", "")
+
+            try:
+                # repo.active_repo.git.checkout('origin/data_collection', '.')
+                # repo.active_repo.git.add('.')
+                # repo.active_repo.git.commit('-m', 'Merge origin/data_collection branch')
+                # repo.merge("origin/data_collection", inform=False)
+                # if repo.name == 'Henry<GitRepo>' and b == 'origin/data_collection':
+                #     continue
+                repo.merge(b, inform=False)
+
+            except BaseException:
+                self.debug_exception()
+                self.debug(
+                    f"merge with {b} failed. This is not an issue if you are only using local "
+                    "repos"
+                )
 
     def rollback_repository(self, expid):
         repo = self._get_repository(expid)
@@ -1591,6 +1662,13 @@ class DVC(Loggable):
 
     def get_repository(self, exp):
         return self._get_repository(exp)
+
+    def get_version(self):
+        bd = str(self.application.preferences.get("pychron.update.build_repo"))
+        self.debug("get version {}".format(bd))
+        if os.path.isdir(bd):
+            repo = Repo(bd)
+            return repo.head.commit.hexsha
 
     def get_meta_head(self):
         return self.meta_repo.get_head()
@@ -2181,6 +2259,7 @@ class DVC(Loggable):
         calculate_f_only=False,
         reload=False,
         quick=False,
+        warn=True,
     ):
         meta_repo = self.meta_repo
         if prog:
@@ -2222,13 +2301,14 @@ class DVC(Loggable):
                 a = DVCAnalysis(uuid, rid, expid)
             except AnalysisNotAnvailableError:
                 self.debug("uuid={}, rid={}, expid={}".format(uuid, rid, expid))
-                self.warning_dialog(
-                    "Analysis {} not in local repository {}. "
-                    "You may need to pull changes. If local repository is up to date you may "
-                    "need to push changes from the data collection computer".format(
-                        rid, expid
+                if warn:
+                    self.warning_dialog(
+                        "Analysis {} not in local repository {}. "
+                        "You may need to pull changes. If local repository is up to date you may "
+                        "need to push changes from the data collection computer".format(
+                            rid, expid
+                        )
                     )
-                )
                 return
 
             a.group_id = record.group_id

@@ -832,11 +832,18 @@ class DVCDatabase(DatabaseAdapter):
 
     def get_fuzzy_analysis(self, search_str):
         with self.session_ctx() as sess:
+            q = sess.query(AnalysisTbl)
+
             comps = [AnalysisTbl.uuid.like("{}%".format(search_str))]
             if "-" in search_str:
                 aliquot = search_str.split("-")[-1]
                 comps.append(AnalysisTbl.aliquot.like("%{}%".format(aliquot)))
-            q = sess.query(AnalysisTbl)
+            else:
+                q = q.join(IrradiationPositionTbl)
+                comps.append(IrradiationPositionTbl.identifier.like(f"{search_str}%"))
+
+                # comps.append(AnalysisTbl.irradiation_position.identifier.like(f"{search_str}%"))
+
             # f = or_(
             #     AnalysisTbl.uuid.like("{}%".format(search_str)),
             #     AnalysisTbl.aliquot.like("{}%".format(search_str)),
@@ -1281,8 +1288,9 @@ class DVCDatabase(DatabaseAdapter):
         excluded_uuids=None,
         verbose=False,
         low_post=None,
+        use_parent_session=True,
     ):
-        with self.session_ctx() as sess:
+        with self.session_ctx(use_parent_session=use_parent_session) as sess:
             q = sess.query(AnalysisTbl)
 
             if mass_spectrometer:
@@ -1459,7 +1467,7 @@ class DVCDatabase(DatabaseAdapter):
         mass_spectrometers=None,
         filter_non_run=True,
         verbose_query=True,
-        **kw
+        **kw,
     ):
         with self.session_ctx() as sess:
             q = sess.query(IrradiationPositionTbl)
@@ -2177,7 +2185,14 @@ class DVCDatabase(DatabaseAdapter):
             if loads:
                 return [ui.name for ui in loads]
 
-    def get_loads(self, names=None, exclude_archived=True, archived_only=False, **kw):
+    def get_loads(
+        self,
+        names=None,
+        projects=None,
+        exclude_archived=True,
+        archived_only=False,
+        **kw,
+    ):
         with self.session_ctx():
             if "order" not in kw:
                 kw["order"] = LoadTbl.create_date.desc()
@@ -2185,11 +2200,26 @@ class DVCDatabase(DatabaseAdapter):
             if archived_only:
                 kw = self._append_filters(LoadTbl.archived, kw)
             else:
+                if projects:
+                    kw = self._append_joins(
+                        (
+                            MeasuredPositionTbl,
+                            AnalysisTbl,
+                            IrradiationPositionTbl,
+                            SampleTbl,
+                            ProjectTbl,
+                        ),
+                        kw,
+                    )
+
                 if exclude_archived:
                     kw = self._append_filters(not_(LoadTbl.archived), kw)
 
                 if names:
                     kw = self._append_filters(LoadTbl.name.in_(names), kw)
+
+                if projects:
+                    kw = self._append_filters(ProjectTbl.name.in_(projects), kw)
 
             loads = self._retrieve_items(LoadTbl, **kw)
             return loads
@@ -2316,7 +2346,7 @@ class DVCDatabase(DatabaseAdapter):
         project_like=None,
         name_like=None,
         name=None,
-        **kw
+        **kw,
     ):
         with self.session_ctx() as sess:
             q = sess.query(SampleTbl)
@@ -2415,7 +2445,7 @@ class DVCDatabase(DatabaseAdapter):
         mass_spectrometers=None,
         exclude_name=None,
         sort_name_key=None,
-        **kw
+        **kw,
     ):
         if names is not None:
             if hasattr(names, "__call__"):
@@ -2472,12 +2502,15 @@ class DVCDatabase(DatabaseAdapter):
         mass_spectrometers=None,
         order=None,
         verbose_query=False,
+        orderby=None,
     ):
         if order:
             order = getattr(ProjectTbl.name, order)()
+        elif orderby:
+            order = orderby
 
-        if principal_investigators or irradiation or mass_spectrometers:
-            with self.session_ctx() as sess:
+        with self.session_ctx() as sess:
+            if principal_investigators or irradiation or mass_spectrometers:
                 q = sess.query(ProjectTbl)
 
                 # joins
@@ -2509,10 +2542,11 @@ class DVCDatabase(DatabaseAdapter):
                     q = q.order_by(order)
 
                 ps = self._query_all(q, verbose_query=verbose_query)
-        else:
-            ps = self._retrieve_items(
-                ProjectTbl, order=order, verbose_query=verbose_query
-            )
+            else:
+                ps = self._retrieve_items(
+                    ProjectTbl, order=order, verbose_query=verbose_query
+                )
+
         return ps
 
     def get_materials(self):
